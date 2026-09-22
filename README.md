@@ -61,20 +61,12 @@ Tested with **Qwen/Qwen2.5-0.5B**:
 
 Per decoder layer, executed in order:
 
-```
-input_layernorm (RMSNorm)
-    -> Q/K/V projection (fp16 GEMM, fp32 compute)
-    -> RoPE (cos/sin, fused per-position)
-    -> attention
-          prefill (SM90a): FlashAttention, TMA + WGMMA, online softmax
-          decode        : split-K GQA FlashAttention (per-KV-groups)
-          pre-Hopper    : torch SDPA fallback
-    -> O projection
-    -> residual add
-post_attention_layernorm (RMSNorm)
-    -> gate/up projections -> SwiGLU (SiLU(gate) * up) -> down projection
-    -> residual add
-```
+![DDQ decoder layer dataflow](assets/ddq-architecture.jpg)
+
+The attention block routes by hardware: **prefill** on NVIDIA Hopper (SM90a)
+uses the custom FlashAttention kernel (TMA bulk loads + WGMMA tensor-core MMA +
+online softmax), **decode** uses the split-K GQA FlashAttention kernel
+(per-KV-groups), and **pre-Hopper** devices fall back to PyTorch SDPA.
 
 ### Kernel map
 
@@ -290,6 +282,8 @@ DDQ/
 ├── sampler_d.cu         # Greedy argmax kernel over the vocabulary
 ├── FA_d.cu              # FlashAttention: SM90a TMA+WGMMA, + pre-Hopper fallback
 ├── FAD_d.cu             # Split-K GQA FlashAttention for decode
+├── assets/
+│   └── ddq-architecture.jpg  # Decoder-layer dataflow diagram
 └── benchmarks/
     └── benchmark_local.py  # Reproducible parity / latency / bandwidth harness
 ```
